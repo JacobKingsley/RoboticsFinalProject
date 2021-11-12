@@ -8,6 +8,8 @@ import tf
 
 from nav_msgs.msg import OccupancyGrid
 from sensor_msgs.msg import LaserScan # message type for scan
+from nav_msgs.msg import Odometry # message type for odom
+
 
 
 DEFAULT_CMD_VEL_TOPIC = 'cmd_vel'
@@ -28,13 +30,24 @@ class Jacob:
 
         self._laser_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC_LASER, LaserScan, self._laser_callback, queue_size=1)
 
+        self._odom_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC_ODOM, Odometry, self._odom_callback, queue_size=1)
+
+
+
     # map callback to store a map, resolution, height, and width
     def map_callback(self, msg):
-        self.read_map = numpy.reshape(msg.data, (msg.info.height, msg.info.width))
+        self.read_map = np.reshape(msg.data, (msg.info.height, msg.info.width))
         self.resolution = msg.info.resolution
 
         self.height = msg.info.height
         self.width = msg.info.width
+
+    def _odom_callback(self, msg):
+        self.x = msg.pose.pose.position.x
+        self.y = msg.pose.pose.position.y
+
+        self.orientation = msg.pose.pose.orientation
+        (self.roll, self.pitch, self.yaw) = tf.transformations.euler_from_quaternion([self.orientation.x, self.orientation.y, self.orientation.z, self.orientation.w])
 
     def _laser_callback(self, msg):
         # check that it has been a second and then reset self.time
