@@ -19,7 +19,7 @@ def calc_bounds(map_img):
 
   # set the minimum x and y ranges
   x_min = map_img.size[0]
-  y_min = map.img_size[1]
+  y_min = map_img.size[1]
 
   # set the other ends of the x and y ranges
   x_end = 0
@@ -29,13 +29,13 @@ def calc_bounds(map_img):
   picture = map_img.load()
 
   for x in range(map_img.size[0]):
-        for y in range(map_img.size[1]):
-            val = picture[x, y]
-            if val != 205:  # not unknown
-                x_min = min(x, x_min)
-                x_end = max(x, x_end)
-                y_min = min(y, y_min)
-                y_end = max(y, y_end)
+    for y in range(map_img.size[1]):
+        val = picture[x, y]
+        if val != 205:  # not unknown?
+            x_min = min(x, x_min)
+            x_end = max(x, x_end)
+            y_min = min(y, y_min)
+            y_end = max(y, y_end)
   
   return x_min, x_end, y_min, y_end
 
@@ -47,7 +47,7 @@ def compute_new_origin_for_crop(map_img, bounds, resolution, origin):
 
   # compute the change in origin position from the point in the lower left corner
   dx = bounds[0] * resolution
-  dy = (map_img.size[1] - bounds[3]) * resolution
+  dy = (map_img.size[1] - bounds[3]) * resolution #??
 
   # rotate by theta
   new_ox = ox + dx * math.cos(o_theta) - dy * math.sin(o_theta)
