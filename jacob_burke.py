@@ -20,7 +20,7 @@ DEFAULT_FRAME_LASER = 'laser' # uncomment for real robot
 
 LASER_TIME = 1
 FREQUENCY = 10
-BUILD_TIME = 30
+BUILD_TIME = 5
 
 
 class Jacob:
@@ -28,7 +28,7 @@ class Jacob:
         self.read_map = None # the variable containing the map.
         self.new_map = None
 
-        self.start_time = rospy.Time.now()
+        self.start_time = rospy.get_rostime()
 
         self._map_sub = rospy.Subscriber("map", OccupancyGrid, self._map_callback, queue_size=1)
 
@@ -43,13 +43,12 @@ class Jacob:
 
     # map callback to store a map, resolution, height, and width
     def _map_callback(self, msg):
-        print(rospy.get_rostime())
-        print(self.start_time)
-        print(rospy.Duration(BUILD_TIME))
         if rospy.get_rostime() - self.start_time < rospy.Duration(BUILD_TIME):
             self.read_map = np.reshape(msg.data, (msg.info.height, msg.info.width))
+            self.new_map = self.read_map
             print("read")
             self.read_map_exists = True
+            self.new_map_exists = True
             print(self.read_map)
             self.resolution = msg.info.resolution
 
@@ -64,7 +63,6 @@ class Jacob:
 
             self.height = msg.info.height
             self.width = msg.info.width
-            self.start_time = rospy.Time.now()
 
 
     def _odom_callback(self, msg):
@@ -80,6 +78,12 @@ class Jacob:
         grid_diff_exists = False
         if self.new_map_exists and self.read_map_exists:
             grid_diff = self.new_map - self.read_map
+            if (self.new_map == self.read_map).all():
+                print("No unrecognized objects detected")
+                return False
+            else:
+                print("unrecognized object detected")
+                return True
             grid_diff_exists = True
         if grid_diff_exists:
             for row in range(1, self.height-1):
@@ -114,8 +118,12 @@ class Jacob:
 
         rate = rospy.Rate(FREQUENCY)
         while not rospy.is_shutdown():
-            self.compare_grids()
-            rate.sleep()
+            if self.new_map_exists:
+                self.compare_grids()
+                rospy.sleep(2)
+            #self.compare_grids()
+            #rospy.sleep(2)
+        rate.sleep()
 
 
 def main():
