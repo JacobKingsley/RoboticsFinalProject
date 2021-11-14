@@ -28,7 +28,7 @@ class Jacob:
         self.read_map = None # the variable containing the map.
         self.new_map = None
 
-        self.start_time = rospy.Time(0)
+        self.start_time = rospy.Time.now()
 
         self._map_sub = rospy.Subscriber("map", OccupancyGrid, self._map_callback, queue_size=1)
 
@@ -46,7 +46,7 @@ class Jacob:
         print(rospy.get_rostime())
         print(self.start_time)
         print(rospy.Duration(BUILD_TIME))
-        if rospy.get_rostime() - self.start_time< rospy.Duration(BUILD_TIME):
+        if rospy.get_rostime() - self.start_time < rospy.Duration(BUILD_TIME):
             self.read_map = np.reshape(msg.data, (msg.info.height, msg.info.width))
             print("read")
             self.read_map_exists = True
@@ -64,7 +64,7 @@ class Jacob:
 
             self.height = msg.info.height
             self.width = msg.info.width
-
+            self.start_time = rospy.Time.now()
 
 
     def _odom_callback(self, msg):
