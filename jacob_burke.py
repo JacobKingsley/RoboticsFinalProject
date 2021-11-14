@@ -9,8 +9,6 @@ import tf
 from nav_msgs.msg import OccupancyGrid
 from sensor_msgs.msg import LaserScan # message type for scan
 from nav_msgs.msg import Odometry
-from workspace.pa4.pa4_occ import FREQUENCY # message type for odom
-
 
 
 DEFAULT_CMD_VEL_TOPIC = 'cmd_vel'
@@ -34,16 +32,24 @@ class Jacob:
 
         self._map_sub = rospy.Subscriber("map", OccupancyGrid, self._map_callback, queue_size=1)
 
-        self._laser_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC_LASER, LaserScan, self._laser_callback, queue_size=1)
+        # self._laser_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC_LASER, LaserScan, self._laser_callback, queue_size=1)
 
         self._odom_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC_ODOM, Odometry, self._odom_callback, queue_size=1)
+
+        self.new_map_exists = False
+        self.read_map_exists = False
 
 
 
     # map callback to store a map, resolution, height, and width
     def _map_callback(self, msg):
-        if rospy.get_rostime() < BUILD_TIME:
+        print(rospy.get_rostime())
+        print(self.start_time)
+        print(rospy.Duration(BUILD_TIME))
+        if rospy.get_rostime() - self.start_time< rospy.Duration(BUILD_TIME):
             self.read_map = np.reshape(msg.data, (msg.info.height, msg.info.width))
+            print("read")
+            self.read_map_exists = True
             print(self.read_map)
             self.resolution = msg.info.resolution
 
@@ -51,6 +57,8 @@ class Jacob:
             self.width = msg.info.width
         else:
             self.new_map = np.reshape(msg.data, (msg.info.height, msg.info.width))
+            self.new_map_exists = True
+            print("new")
             print(self.new_map)
             self.resolution = msg.info.resolution
 
@@ -69,12 +77,14 @@ class Jacob:
 
     def compare_grids(self):
         grid_diff = None
-        if self.new_map:
-            grid_diff = self.read_map - self.new_map
-        if grid_diff:
+        grid_diff_exists = False
+        if self.new_map_exists and self.read_map_exists:
+            grid_diff = self.new_map - self.read_map
+            grid_diff_exists = True
+        if grid_diff_exists:
             for row in range(1, self.height-1):
                 for column in range(1, self.width-1):
-                    if grid_diff[row, column] < 0:
+                    if grid_diff[row, column] > 0:
                         print("here")
 
                         negative_neighbors = 0
@@ -103,31 +113,30 @@ class Jacob:
     def spin(self):
 
         rate = rospy.Rate(FREQUENCY)
-        timer = 0
         while not rospy.is_shutdown():
-
+            self.compare_grids()
             rate.sleep()
 
 
-    def main():
-        """Main function."""
+def main():
+    """Main function."""
 
-        # 1st. initialization of node.
-        rospy.init_node("robot")
+    # 1st. initialization of node.
+    rospy.init_node("robot")
 
-        # Sleep for a few seconds to wait for the registration.
-        rospy.sleep(2)
+    # Sleep for a few seconds to wait for the registration.
+    rospy.sleep(2)
 
-        # Initialization of the class for the random walk.
-        occ_object = Jacob()
+    # Initialization of the class for the random walk.
+    occ_object = Jacob()
 
-        try:
-            occ_object.spin()
-            
+    try:
+        occ_object.spin()
+        
 
-        except rospy.ROSInterruptException:
-            rospy.logerr("ROS node interrupted.")
+    except rospy.ROSInterruptException:
+        rospy.logerr("ROS node interrupted.")
 
-    if __name__ == "__main__":
-        """Run the main function."""
-        main()
+if __name__ == "__main__":
+    """Run the main function."""
+    main()
