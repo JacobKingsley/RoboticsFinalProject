@@ -42,7 +42,7 @@ def get_grid_movements(grid_path):
 		curr_y = point[1]
 
 
-	print(movements_list)
+	return movements_list
 
 		
 

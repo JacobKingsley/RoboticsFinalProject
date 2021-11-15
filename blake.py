@@ -45,8 +45,8 @@ BLUE = [0, 0, 1]
 SPHERE = Marker.SPHERE
 ARROW = Marker.ARROW
 
-START = [0, -2.1]
-GOAL = [1, 2]
+START = (0, -2.1)
+GOAL = (1, 2)
 
 AWAY_FROM_OBS = .5 # in m
 
@@ -202,6 +202,42 @@ class Intruder_Patrol_Movement():
 		self._cmd_pub.publish(twist_msg)
 	
 
+	# def rotate(self, angle):
+	# 	rate = rospy.Rate(FREQUENCY)
+
+	# 	if not rospy.is_shutdown():
+
+	# 		# if angle is negative, rotate clockwise (negative angular velocity)
+	# 		if angle < 0:
+	# 			ang_vel = - self.angular_velocity
+	# 		else: # if angle is positive, rotate counterclockwise (positive angular velocity)
+	# 			ang_vel = self.angular_velocity
+
+						
+	# 		"""using only timer"""
+	# 		# Get current time.
+	# 		start_time = rospy.get_rostime()
+	# 		# publish rotation until enough time elapses so the robot turns the given angle
+	# 		while rospy.get_rostime() - start_time < rospy.Duration(abs(angle) / self.angular_velocity):
+	# 			self.move(0, ang_vel)
+			
+	# 			rate.sleep()
+
+	def calc_angle_distance(self, angle_1, angle_2):
+		# calculates the distance between two angles.
+		d_angle = (angle_2 - angle_1) % (2 * math.pi)
+
+		# makes sure output is in range (-pi, pi)
+		# this way sign of output indicates quickest direction to rotate from angle_1 to angle_2
+		if d_angle >= math.pi:
+			d_angle -= 2 * math.pi
+
+		return d_angle
+
+	def distance_between(self, x1, y1, x2, y2):
+		# calculates euclidean distance between two points
+		return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
 	def rotate(self, angle):
 		rate = rospy.Rate(FREQUENCY)
 
@@ -213,15 +249,87 @@ class Intruder_Patrol_Movement():
 			else: # if angle is positive, rotate counterclockwise (positive angular velocity)
 				ang_vel = self.angular_velocity
 
-						
-			"""using only timer"""
-			# Get current time.
-			start_time = rospy.get_rostime()
-			# publish rotation until enough time elapses so the robot turns the given angle
-			while rospy.get_rostime() - start_time < rospy.Duration(abs(angle) / self.angular_velocity):
+			"""new method: calculating destination orientation using odom"""
+			# calculate the desired final orientation of the robot
+			# puts the angle in the range (-pi, pi)
+			dest_yaw = (self.odom_yaw + angle) % (2 * math.pi)
+			if dest_yaw >= math.pi:
+				dest_yaw -= 2 * math.pi
+
+			# publish rotation until current yaw is the desired yaw.
+			while abs(self.calc_angle_distance(self.odom_yaw, dest_yaw)) > self.angle_thresh:
 				self.move(0, ang_vel)
+
+				"""print statements for testing"""
+				# print("dist: " + str(self.calc_angle_distance(self.odom_yaw, dest_yaw)))
+				# print("current: " + str(self.odom_yaw) + ",  dest: " + str(dest_yaw))
 			
 				rate.sleep()
+
+	def drive(self, distance):
+		rate = rospy.Rate(FREQUENCY)
+
+		if not rospy.is_shutdown():
+
+			# if distance is negative, move backwards
+			if distance < 0:
+				lin_vel = - self.linear_velocity
+			else: # if distance is positive, move forward
+				lin_vel = self.linear_velocity
+
+			"""new method: calculating destination and using odom"""
+			# calculate the desired final poistion of the robot
+			dest_x = self.odom_x + (distance * math.cos(self.odom_yaw))
+			dest_y = self.odom_y + (distance * math.sin(self.odom_yaw))
+			
+			# publish movement until the position of the robot (odom) is the desired position
+			while self.distance_between(self.odom_x, self.odom_y, dest_x, dest_y) > self.linear_thresh:
+				self.move(lin_vel, 0)
+
+				"""print statements for testing"""
+				# print("dist: " + str(math.sqrt(((self.odom_x - dest_x)**2) + ((self.odom_y - dest_y)**2))))
+				# print("current: " + str((self.odom_x, self.odom_y)) + ",  dest: " + str((dest_x, dest_y)))
+
+				rate.sleep()
+
+
+	def polyline(self, world_points):
+
+		# translate points to odom frame so they work with self.go_to_point()
+		translated_pts_odom = self.world_to_odom(world_points)
+
+		for pt in translated_pts_odom:
+			self.go_to_point(pt[0], pt[1])
+
+		# go back to first point in the list
+		self.go_to_point(translated_pts_odom[0][0], translated_pts_odom[0][1])
+
+
+	def rotate_to(self, orientation_angle):
+		# rotation to given orientation in the odom frame
+		d_angle = (orientation_angle - self.odom_yaw) % (2 * math.pi)
+
+		# see which way to rotate (shortest way)
+		if d_angle < math.pi:	# rotate counterclockwise
+			self.rotate(d_angle)
+		else: # rotate clockwise
+			self.rotate(d_angle - (2 * math.pi))
+
+	def go_to_point(self, x, y):
+		# rotation, translation, method to get robot to a certain position
+		dest_angle = math.atan2(y - self.odom_y, x - self.odom_x)
+		# find distance the robot has to go to that point
+		dest_distance = self.distance_between(self.odom_x, self.odom_y, x, y)
+		# find rotation angle for final orientation
+
+		self.rotate_to(dest_angle)	# rotate toward destination point
+		self.drive(dest_distance)	# drive calculated distance
+
+
+	def go_to_state(self, x, y, theta):
+		# rotation, translation, rotation method to get robot to a certain position and orientation
+		self.go_to_point(x, y)	# drive to point
+		self.rotate_to(theta)	# rotate to given final orientation
 
 
 	def spin(self):
