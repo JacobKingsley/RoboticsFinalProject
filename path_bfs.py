@@ -6,9 +6,110 @@
 # CS 81 Final Project
 # path finder BFS function for Robot Movement Controller
 
-
-
+""" CONSTANTS """
 GRID_SQUARE_OCCUPIED = 100
+
+""" ********** Astar Node class ***************** """
+# wrapper node for A* search
+class AstarNode:
+    def __init__(self, state, heuristic, cost, parent=None):
+        self.state = state
+        self.heuristic = heuristic
+        self.cost = cost
+        self.parent = parent
+
+
+    def priority(self):
+        return self.heuristic + self.cost
+
+    def __lt__(self, other):
+        return self.priority() < other.priority()
+
+class Grid_Search_Problem:
+    # constructor that takes in an occupancy grid and the goal state
+    def __init__(self, grid, goal_state):
+        self.grid = grid
+        self.goal_state = goal_state
+    # returns euclidian distance from position in current state and in goal state
+    def euclidian_heuristic(self, state):
+        return math.sqrt((self.goal_state[0]-state[0])**2 + (self.goal_state[1]-state[1])**2)
+    # returns all valid moves from current state
+    def get_successors(self, state):
+        successors = []
+
+        actions = [(1,0),(1,1),(0,1),(-1, 1),(-1,0),(-1,-1),(0,-1),(1,-1)]
+
+        for action in actions:
+            new_pos = (state[0]+action[0], state[1]+action[1])
+            if self.grid.is_valid(new_pos[0], new_pos[1]):
+                successors.append(new_pos)
+
+        return successors
+
+    # gets the transition cost between two states
+    def get_cost(self, node, child_node):
+        return math.sqrt((node[0]-child_node[0])**2 + (node[1]-child_node[1])**2)
+    # checks whether goal has been reached or not
+    def goal_test(self, state):
+        return state == self.goal_state
+
+
+def astar_search(grid, start, goal):
+    # convert start and goal points into cell format for search problem.
+    #start_cell = self.grid.get_cell_from_pos(start[0], start[1])
+    #goal_cell = self.grid.get_cell_from_pos(goal[0], goal[1])
+
+    start_cell = start
+    goal_cell = goal
+
+
+	if ( (grid.cell_at(goal_grid[0], goal_grid[1]) >= GRID_SQUARE_OCCUPIED) or
+			(grid.cell_at(start_grid[0], start_grid[1]) >= GRID_SQUARE_OCCUPIED)):
+		# if start or end location on an occupied (wall) space, return empty path
+		return []
+
+    # create a search problem using grid and cell index of goal
+    search_problem = Grid_Search_Problem(grid, goal_cell)
+
+    start_node = AstarNode(start_cell, search_problem.euclidian_heuristic(start_cell), 0.0)
+    pqueue = []
+    heappush(pqueue, start_node)
+
+    visited_cost = {}
+    visited_cost[start_node.state] = 0
+
+    while pqueue:
+        current_node = heappop(pqueue)
+        current_state = current_node.state
+
+        if search_problem.goal_test(current_state):
+            return backchain(current_node)
+        else:
+            for child_state in search_problem.get_successors(current_state):
+                child_cost = current_node.cost + search_problem.get_cost(current_state, child_state)
+                child_node = AstarNode(child_state, search_problem.euclidian_heuristic(child_state), child_cost, current_node)
+
+                if child_state not in visited_cost:
+                    heappush(pqueue, child_node)
+                    visited_cost[child_state] = child_cost
+                elif child_cost < visited_cost[child_state]:
+                    heappush(pqueue, child_node)
+                    visited_cost[child_state] = child_cost
+
+# back chain through parents of each A* node to get final path
+def backchain(node):
+    result = []
+    current = node
+    while current:
+        result.append(current.state)
+        current = current.parent
+    
+    result.reverse()
+    return result
+
+
+
+""" BFS """
 
 def find_path(map, start, goal):
 		# takes start and goal coordinates in map frame (units of meters, range is (0, 10))
