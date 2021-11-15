@@ -34,6 +34,20 @@ class Grid:
 		if 0 <= x < self.width and 0 <= y < self.height:
 			self.grid[y, x] = occupancy
 
+	def is_valid(self, x, y):
+		# print("r")
+		# print(not (0 <= x < self.width and 0 <= y < self.height))
+		if not (0 <= x < self.width and 0 <= y < self.height):
+			return False
+
+		# print("occu")
+		# print(self.cell_at(x, y) >= GRID_SQUARE_OCCUPIED)
+		if self.cell_at(x, y) >= GRID_SQUARE_OCCUPIED or self.cell_at(x, y) == -1:
+			return False
+
+		# print("true")
+		return True
+
 	def cell_at(self, x, y):
 		return self.grid[y, x]
 

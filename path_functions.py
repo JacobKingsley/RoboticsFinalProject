@@ -24,7 +24,6 @@ def get_grid_movements(grid_path):
 	for point in grid_path[2:]:
 
 		new_d = find_direction(curr_x, curr_y, point[0], point[1])
-		print(new_d, curr_movement_l)
 
 		if new_d == curr_d:
 			if new_d == 'x':
