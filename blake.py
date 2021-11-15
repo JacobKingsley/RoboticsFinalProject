@@ -64,22 +64,25 @@ FREQUENCY = 10 #Hz.
 
 
 # Velocities that will be used
-LINEAR_VELOCITY = .6 # m/s
-ANGULAR_VELOCITY = math.pi/4 # rad/s
+LINEAR_VELOCITY = .25 # m/s
+ANGULAR_VELOCITY = math.pi/6 # rad/s
 
 
 # minimum distance for registering obstacles in front of the robot
 MIN_THRESHOLD_DISTANCE = .3 # m
 
 
+START = (0, 0)
 
 class Intruder_Patrol_Movement():
-	def __init__(self, linear_velocity=LINEAR_VELOCITY, angular_velocity=ANGULAR_VELOCITY):
+	def __init__(self, linear_velocity=LINEAR_VELOCITY, angular_velocity=ANGULAR_VELOCITY,
+	min_threshold_distance=MIN_THRESHOLD_DISTANCE, front_scan_angle=[MIN_SCAN_ANGLE_FRONT, MAX_SCAN_ANGLE_FRONT]):
 		"""Constructor."""
 
 		# Setting up publishers/subscribers.
-		self._cmd_pub = rospy.Publisher(DEFAULT_CMD_VEL_TOPIC, Twist, queue_size=1)		# movement publisher
+		self._cmd_pub = rospy.Publisher(DEFAULT_CMD_VEL_TOPIC, Twist, queue_size=100)		# movement publisher
 		self._occu_sub = rospy.Subscriber(DEFAULT_GRID_TOPIC, OccupancyGrid, self._occu_callback, queue_size=1)
+		self._laser_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC, LaserScan, self._laser_callback, queue_size=1)	# laser subscriber
 		self._odom_sub = rospy.Subscriber(DEFAULT_ODOM_TOPIC, Odometry, self._odom_callback, queue_size=1)
 		
 		self.linear_velocity = linear_velocity # Constant linear velocity set.
@@ -95,6 +98,12 @@ class Intruder_Patrol_Movement():
 		self.y = 0
 		self.yaw = 0
 
+		self.next_waypoint = True
+		self.front_scan_angle = front_scan_angle
+
+		self.front_obs = False
+		self.min_threshold_distance = min_threshold_distance
+
 
 	def move(self, linear_vel, angular_vel):
 		"""Send a velocity command (linear vel in m/s, angular vel in rad/s)."""
@@ -104,12 +113,36 @@ class Intruder_Patrol_Movement():
 		twist_msg.linear.x = linear_vel
 		twist_msg.angular.z = angular_vel
 		self._cmd_pub.publish(twist_msg)
+
+	def _laser_callback(self, msg):
+		forward_i = int(round((LASER_FRONT - msg.angle_min) / msg.angle_increment))
+		forward_i_2 = int(round(((LASER_FRONT + 2 * math.pi) - msg.angle_min) / msg.angle_increment))
+		self.forward_scan_distance = msg.ranges[forward_i]
+
+		# print(len(msg.ranges))
+		# print(msg.angle_min)
+		# print(msg.angle_max)
+		# print(msg.angle_increment)
+
+
+		# check front and set a flag if the robot gets too close to an obstacle
+		f_start_index = int(round((self.front_scan_angle[0] - msg.angle_min) / msg.angle_increment))
+		f_end_index = int(round((self.front_scan_angle[1] - msg.angle_min) / msg.angle_increment))
+
+		ranges_spliced = msg.ranges[f_start_index : forward_i_2] + msg.ranges[forward_i : f_end_index + 1]
+
+		f_min_value = np.min(ranges_spliced)
+
+		# print(f_min_value)
+		
+		if f_min_value < self.min_threshold_distance:
+			self.front_obs = True
+			self.reverse
 		
 
 	def _odom_callback(self, msg):
-		
-		self.x = msg.pose.pose.position.x
-		self.y = msg.pose.pose.position.y
+		self.x = msg.pose.pose.position.x + START[0]
+		self.y = msg.pose.pose.position.y + START[1]
 		self.orientation = msg.pose.pose.orientation
 		(self.roll, self.pitch, self.yaw) = tf.transformations.euler_from_quaternion([self.orientation.x, self.orientation.y, self.orientation.z, self.orientation.w])
 
@@ -155,6 +188,14 @@ class Intruder_Patrol_Movement():
 			else: # if angle is positive, rotate counterclockwise (positive angular velocity)
 				ang_vel = self.angular_velocity
 
+
+			# """old method: using only timer"""
+			# # Get current time.
+			# start_time = rospy.get_rostime()
+			# # publish rotation until enough time elapses so the robot turns the given angle
+			# while rospy.get_rostime() - start_time < rospy.Duration(abs(angle) / self.angular_velocity):
+			# 	self.move(0, ang_vel)
+
 			"""new method: calculating destination orientation using odom"""
 			# calculate the desired final orientation of the robot
 			# puts the angle in the range (-pi, pi)
@@ -185,6 +226,13 @@ class Intruder_Patrol_Movement():
 			else: # if distance is positive, move forward
 				lin_vel = self.linear_velocity
 
+			# """old method: using only timer"""
+			# # Get current time.
+			# start_time = rospy.get_rostime()
+			# # publish motion until enough time elapses so the robot moves the given distance
+			# while rospy.get_rostime() - start_time < rospy.Duration(abs(distance) / self.linear_velocity):
+			# 	self.move(lin_vel, 0)
+
 			"""new method: calculating destination and using odom"""
 			# calculate the desired final poistion of the robot
 			dest_x = self.x + (distance * math.cos(self.yaw))
@@ -200,6 +248,24 @@ class Intruder_Patrol_Movement():
 
 				rate.sleep()
 
+			self.stop()
+
+	def reverse(self):
+		print("rev")
+
+		
+		self.drive(-.2)
+		self.stop()
+		self.rotate(math.pi)
+		self.stop()
+
+		curr_grid = self.inflated_map.m_to_grid_coords(self.x, self.y)
+		while not self.inflated_map.is_valid(curr_grid[0], curr_grid[1]):
+			self.drive(.2)
+			curr_grid = self.inflated_map.m_to_grid_coords(self.x, self.y)
+
+		curr_grid = self.inflated_map.m_to_grid_coords(self.x, self.y)
+		if self.inflated_map.is_valid(curr_grid[0], curr_grid[1]):
 			self.stop()
 
 
@@ -251,6 +317,10 @@ class Intruder_Patrol_Movement():
 				self.go_to_point(self.x + d, self.y)
 			elif movement[0] == 'y':
 				self.go_to_point(self.x, self.y + d)
+
+			
+		rospy.sleep(1)
+		self.next_waypoint = True
 	
 	def generate_waypoint(self):
 		width = self.inflated_map.width
@@ -273,14 +343,14 @@ class Intruder_Patrol_Movement():
 		start_grid = self.inflated_map.m_to_grid_coords(self.x, self.y)
 		goal_grid = waypoint
 
-		# self.path = astar_search(self.inflated_map, start_grid, goal_grid)
+		# self.grid_path = astar_search(self.inflated_map, start_grid, goal_grid)
 		self.grid_path = find_path(self.inflated_map, start_grid, goal_grid)
 
 		# if path is an empty list, it means a path was not found
 		# Either there is no path, or the start or end positions are on occupied spaces (walls)
-		if self.path == []:
+		if self.grid_path == []:
 			print("Error: no path found. Either no path exists or the start or end positions are on occupied spaces")
-			self.path = []
+			self.grid_path = []
 			# return
 
 		# get movements from list of points and travel along path
@@ -292,15 +362,23 @@ class Intruder_Patrol_Movement():
 
 	def spin(self):
 		rate = rospy.Rate(FREQUENCY) # loop at 10 Hz.
-		while not rospy.is_shutdown():
+		while not rospy.is_shutdown() and self.next_waypoint:
 			# run only when the map is loaded
 			if self.inflated_map:
 				start_pt = self.inflated_map.m_to_grid_coords(self.x, self.y)
 
 				if not self.inflated_map.is_valid(start_pt[0], start_pt[1]):
 					print("ERROR: START NOT VALID")
+					self.reverse()
+
+					continue
 
 				waypoint = self.generate_waypoint()
+
+				self.next_waypoint = False
+
+				print(start_pt, waypoint)
+
 				self.go_to_waypoint(waypoint)
 
 				

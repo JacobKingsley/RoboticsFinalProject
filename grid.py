@@ -16,7 +16,7 @@ import copy
 
 
 GRID_SQUARE_OCCUPIED = 100
-INFLATE_SCALE = 5
+INFLATE_SCALE = 3
 
 
 class Grid:

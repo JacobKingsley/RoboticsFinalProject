@@ -118,7 +118,6 @@ def backchain(node):
 def find_path(map, start_grid, goal_grid):
 		# takes start and goal coordinates in map frame (units of meters, range is (0, 10))
 		# need to convert to occupancy grid resolution (grid squares have length 0.05 m)
-		print("BFS")
 
 		if ( (map.cell_at(goal_grid[0], goal_grid[1]) >= GRID_SQUARE_OCCUPIED) or
 				(map.cell_at(start_grid[0], start_grid[1]) >= GRID_SQUARE_OCCUPIED)):
