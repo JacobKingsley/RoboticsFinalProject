@@ -46,6 +46,13 @@ class Grid_Search_Problem:
 
         return successors
 
+    # gets the transition cost between two states
+    def get_cost(self, node, child_node):
+        return math.sqrt((node[0]-child_node[0])**2 + (node[1]-child_node[1])**2)
+    # checks whether goal has been reached or not
+    def goal_test(self, state):
+        return state == self.goal_state
+
 
 def astar_search(grid, start, goal):
     # convert start and goal points into cell format for search problem.
