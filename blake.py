@@ -15,114 +15,106 @@ import random
 import numpy as np
 from enum import Enum
 
+from grid import Grid
+from path_bfs import find_path
+from path_functions import get_grid_movements
+
 # import of relevant libraries.
 import rospy # module for ROS APIs
 from geometry_msgs.msg import Twist # message type for cmd_vel
 from sensor_msgs.msg import LaserScan # message type for scan
+from nav_msgs.msg import Odometry, OccupancyGrid
+from visualization_msgs.msg import Marker
+import tf
+
+
+# Constants.
+# Time between message publishing to prevent skipping of messages
+DT = .025
+
+GRID_SQUARE_OCCUPIED = 100
+
+# Visualization constants
+SPHERE_SCALE = [.4, .4, .4]
+SPHERE_SCALE_PATH = [.1, .1, .1]
+
+RED = [1, 0, 0]
+GREEN = [0, 1, 0]
+BLUE = [0, 0, 1]
+
+SPHERE = Marker.SPHERE
+ARROW = Marker.ARROW
+
+START = [0, -2.1]
+GOAL = [1, 2]
+
+AWAY_FROM_OBS = .5 # in m
 
 
 # Constants.
 # Topic names
-DEFAULT_CMD_VEL_TOPIC = 'cmd_vel'
-DEFAULT_SCAN_TOPIC = 'base_scan' # name of topic for Stage simulator. For Gazebo, 'scan'
+DEFAULT_CMD_VEL_TOPIC = "/cmd_vel"
+DEFAULT_SCAN_TOPIC = "/scan" # name of topic for Stage simulator. For Gazebo, 'scan'
+DEFAULT_ODOM_TOPIC = "/odom"
+DEFAULT_GRID_TOPIC = "/map"
 
 
+######	Turtlebot simulation constants
+# constant holding the orientation of the front of the robot in the laser frame
+LASER_FRONT = 0
+# Field of view in radians that is checked in front of the robot for obstacles
+MIN_SCAN_ANGLE_FRONT = 315 / 180 * math.pi
+MAX_SCAN_ANGLE_FRONT = 45 / 180 * math.pi
+HALF_FRONT_ANGLE = 45 / 180 * math.pi
+
+# constant holding the orientation of the right of the robot in the laser frame
+LASER_RIGHT = 3 * math.pi/2
+LASER_LEFT = math.pi / 2
+
+
+#####	Constants that are thesame for each
 # Frequency at which the loop operates
 FREQUENCY = 10 #Hz.
 
 DT_MODE = 15
 
 # Velocities that will be used
-LINEAR_VELOCITY = .8 # m/s
-ANGULAR_VELOCITY = math.pi/3 # rad/s
+LINEAR_VELOCITY = .6 # m/s
+ANGULAR_VELOCITY = math.pi/4 # rad/s
 
-# Target distance from right wall
-TARGET_DISTANCE = .5 # m
 
-# constant holding the orientation of the front of the robot in the laser frame
-LASER_FRONT = 0
-# LASER_FRONT = -math.pi
 
-# constant holding the orientation of the right of the robot in the laser frame
-LASER_RIGHT = (LASER_FRONT - math.pi/2)
-# LASER_RIGHT = ((((LASER_FRONT - math.pi/2) + math.pi) % 2*math.pi) - math.pi)
-
-LASER_LEFT = LASER_FRONT + math.pi / 2
-# LASER_LEFT = ((((LASER_FRONT + math.pi/2) + math.pi) % 2*math.pi) - math.pi)
-
-# Field of view in radians that is checked to the right of the robot for distance to the wall
-MIN_SCAN_ANGLE_RIGHT = -180 / 180 * math.pi
-MAX_SCAN_ANGLE_RIGHT = 0 / 180 * math.pi
-
-MIN_SCAN_ANGLE_LEFT = 0 / 180 * math.pi
-MAX_SCAN_ANGLE_LEFT = 180 / 180 * math.pi
-
-# Field of view in radians that is checked in front of the robot for obstacles
-HALF_FRONT_ANGLE = 45.0 / 180 * math.pi
-MIN_SCAN_ANGLE_FRONT = LASER_FRONT - HALF_FRONT_ANGLE
-MAX_SCAN_ANGLE_FRONT = LASER_FRONT + HALF_FRONT_ANGLE
-
-# MIN_SCAN_ANGLE_FRONT = LASER_FRONT - HALF_FRONT_ANGLE
-# MAX_SCAN_ANGLE_FRONT = LASER_FRONT + HALF_FRONT_ANGLE
 
 # minimum distance for registering obstacles in front of the robot
-MIN_THRESHOLD_DISTANCE = .7 # m
+MIN_THRESHOLD_DISTANCE = .3 # m
 
-# PD Controller gain values
-KP = 4
-KD = 8
-
-# fsm controller for robot's state
-class FSM(Enum):
-	RANDOM_WALK = 0
-	PD_START = 1
-	PD_FOLLOW_WALL = 2
-	PD_TURN_LEFT = 3
-	PD_TURN_RIGHT = 4
-	STOP = 5
-
-	RIGHT_WALL = 10
-	LEFT_WALL = 11
 
 
 class Intruder_Patrol_Movement():
-	def __init__(self, linear_velocity=LINEAR_VELOCITY, angular_velocity=ANGULAR_VELOCITY, target_distance=TARGET_DISTANCE,
-		right_scan_angle=[MIN_SCAN_ANGLE_RIGHT, MAX_SCAN_ANGLE_RIGHT], left_scan_angle=[MIN_SCAN_ANGLE_LEFT, MAX_SCAN_ANGLE_LEFT], front_scan_angle=[MIN_SCAN_ANGLE_FRONT, MAX_SCAN_ANGLE_FRONT], kp=KP, kd=KD, min_threshold_distance=MIN_THRESHOLD_DISTANCE):
+	def __init__(self, linear_velocity=LINEAR_VELOCITY, angular_velocity=ANGULAR_VELOCITY):
 		"""Constructor."""
 
 		# Setting up publishers/subscribers.
-		# Setting up the publisher to send velocity commands.
-		self._cmd_pub = rospy.Publisher(DEFAULT_CMD_VEL_TOPIC, Twist, queue_size=1)
-		# Setting up subscriber receiving messages from the laser.
-		self._laser_sub = rospy.Subscriber(DEFAULT_SCAN_TOPIC, LaserScan, self._laser_callback, queue_size=1)
-
-
-		# Parameters.
+		self._cmd_pub = rospy.Publisher(DEFAULT_CMD_VEL_TOPIC, Twist, queue_size=1)		# movement publisher
+		self._occu_sub = rospy.Subscriber(DEFAULT_GRID_TOPIC, OccupancyGrid, self._occu_callback, queue_size=1)
+		self._occu_pub = rospy.Publisher(DEFAULT_GRID_TOPIC, OccupancyGrid, queue_size=1)
+		self._odom_sub = rospy.Subscriber(DEFAULT_ODOM_TOPIC, Odometry, self._odom_callback, queue_size=1)
+		
 		self.linear_velocity = linear_velocity # Constant linear velocity set.
 		self.angular_velocity = angular_velocity # Angular velocity based on LIDAR scan, but starts at 0
 
-		self.target_distance = target_distance
-		self.right_scan_angle = right_scan_angle
-		self.left_scan_angle = left_scan_angle
-		self.front_scan_angle = front_scan_angle
-		self.min_threshold_distance = min_threshold_distance
+		self.marker_pub = rospy.Publisher("markers", Marker, queue_size=100)
+		self.map = None # the variable containing the map.
+		self.inflated_map = None
 
-		# set initial error
-		self.err = 0
+		self.markers_published = 0
+		self.path = None
+		self.grid_path = None
 
-		# set dt to be the time between steps based on frequency
-		self._dt = 1 / FREQUENCY
+		self.x = 0
+		self.y = 0
+		self.yaw = 0
 
-		self._p = kp
-		self._d = kd
-		self._errors = [] # list of errors
-
-		self.front_obs = False
-
-		# self._fsm = FSM.RANDOM_WALK
-		self._fsm = FSM.PD_START
-
-		self._wall_fsm = FSM.RIGHT_WALL
 
 	
 	def move(self, linear_vel, angular_vel):
@@ -133,109 +125,82 @@ class Intruder_Patrol_Movement():
 		twist_msg.linear.x = linear_vel
 		twist_msg.angular.z = angular_vel
 		self._cmd_pub.publish(twist_msg)
+		
+	def _odom_callback(self, msg):
+		
+		self.x = msg.pose.pose.position.x
+		self.y = msg.pose.pose.position.y
+		self.orientation = msg.pose.pose.orientation
+		(self.roll, self.pitch, self.yaw) = tf.transformations.euler_from_quaternion([self.orientation.x, self.orientation.y, self.orientation.z, self.orientation.w])
+
+	def _occu_callback(self, msg):
+		"""Processing of occupancy grid message."""
+
+		# print(msg.header)
+		# print("____")
+		# print(msg.info)
+
+		if not self.map:
+			self.map = Grid(msg.data, msg.info.width, msg.info.height, msg.info.resolution, msg.info.origin)
+
+			self.inflated_map = self.map.inflate_copy()
+
+			# print("got map")
+			self._occu_pub.publish(msg)
+
+			self.publish_grid(msg, self.inflated_map)
+
+	def publish_grid(self, original_msg, grid):
+		occupancy_msg = original_msg
+
+		occupancy_msg.data = grid.grid_as_list()
+
+		self._occu_pub.publish(occupancy_msg)
+
+	# Sets places start and goal markers on the vizualization
+	def set_start_goal_map(self, start_x, start_y, goal_x, goal_y):
+		self.publish_marker((start_x, start_y, 0), BLUE, SPHERE, SPHERE_SCALE)
+		rospy.sleep(DT)
+		self.publish_marker((goal_x, goal_y, 0), GREEN, SPHERE, SPHERE_SCALE)
+
+	def publish_path_markers(self, path):
+		for point in path:
+			self.publish_marker(point, RED, SPHERE, SPHERE_SCALE_PATH)
+			rospy.sleep(DT)
+
+	def publish_marker(self, point, rgb, marker_type, scale):
+		marker_msg = Marker()
+		marker_msg.header.stamp = rospy.Time.now()
+		marker_msg.header.frame_id = "map"
+		
+		marker_msg.action = Marker.ADD
+		marker_msg.type = marker_type
+		marker_msg.id = self.markers_published
+		marker_msg.pose.position.x = point[0]
+		marker_msg.pose.position.y = point[1]
+		quaternion = tf.transformations.quaternion_from_euler(0, 0, 0)
+		marker_msg.pose.orientation.x = quaternion[0]
+		marker_msg.pose.orientation.y = quaternion[1]
+		marker_msg.pose.orientation.z = quaternion[2]
+		marker_msg.pose.orientation.w = quaternion[3]
+		marker_msg.color.r = rgb[0]
+		marker_msg.color.g = rgb[1]
+		marker_msg.color.b = rgb[2]
+		marker_msg.color.a = 1
+		marker_msg.scale.x = scale[0]
+		marker_msg.scale.y = scale[1]
+		marker_msg.scale.z = scale[2]
+		self.marker_pub.publish(marker_msg)
+
+		# increment markers counter
+		self.markers_published += 1
 
 	def stop(self):
 		print("stopping")
 		"""Stop the robot."""
 		twist_msg = Twist()
 		self._cmd_pub.publish(twist_msg)
-
-	def _laser_callback(self, msg):
-		"""Processing of laser message."""
-		# NOTE: assumption: the one at angle 0 corresponds to the front.
-		
-		# Find the minimum range value between min_scan_angle and max_scan_angle
-		# to find distance to wall for the PD-Controller
-
-		# find indices that hold the ranges within the field of view
-		forward_i = int(round((LASER_FRONT - msg.angle_min) / msg.angle_increment))
-		self.forward_scan_distance = msg.ranges[forward_i]
-		
-		right_start_index = int(round((self.right_scan_angle[0] - msg.angle_min) / msg.angle_increment))
-		right_end_index = int(round((self.right_scan_angle[1] - msg.angle_min) / msg.angle_increment))
-
-		left_start_index = int(round((self.left_scan_angle[0] - msg.angle_min) / msg.angle_increment))
-		left_end_index = int(round((self.left_scan_angle[1] - msg.angle_min) / msg.angle_increment))
-
-		# find the minimum distance value in this range
-		min_scan_r = min(msg.ranges[right_start_index:right_end_index])
-		min_scan_l = min(msg.ranges[left_start_index:left_end_index])
-
-		if min_scan_r <= min_scan_l:
-			self._wall_fsm = FSM.RIGHT_WALL
-		else:
-			self._wall_fsm = FSM.LEFT_WALL
-
-		# set wall-follow error as this minimum distance to the right of the robot
-		self.err = self.target_distance - min_scan_r
-
-
-		# check front and set a flag if the robot gets too close to an obstacle
-		f_start_index = int(round((self.front_scan_angle[0] - msg.angle_min) / msg.angle_increment))
-		f_end_index = int(round((self.front_scan_angle[1] - msg.angle_min) / msg.angle_increment))
-
-		f_min_value = np.min(msg.ranges[f_start_index:f_end_index+1])
-		f_min_index = msg.ranges[f_start_index:f_end_index+1].index(f_min_value)
-		f_min_angle = (((msg.angle_min + (f_min_index * msg.angle_increment)) + math.pi ) % 2*math.pi ) - math.pi
-		
-		if f_min_value < self.min_threshold_distance:
-			self.front_obs = True
-
-		# determine fsm state by the front_obs flag and start flag
-		if self._fsm != FSM.RANDOM_WALK and self._fsm != FSM.STOP:
-			print("PD WALL")
-			if self.front_obs:
-				self.pd_reset()
-
-				print("PD ANGLE: " + str(f_min_angle))
-				if f_min_angle >= LASER_FRONT:
-					self._fsm = FSM.PD_TURN_LEFT
-				else:
-				# 	self._fsm = FSM.PD_TURN_RIGHT
-					self._fsm = FSM.PD_TURN_LEFT
-
-			elif self._fsm != FSM.PD_START:
-				self._fsm = FSM.PD_FOLLOW_WALL
-
-	def pd_step(self, err, dt):
-		# Steps the PD forward with given error and dt interval. Returns the calculated actuation as the output
-		
-		# add the error to the list of errors
-		self._errors.append(err)
-
-		# P controller
-		u = self._p * err
-		d = 0
-
-		# add in the D controller
-		if(len(self._errors) > 1):
-			d = (self._errors[-1] - self._errors[-2]) / dt
-			u +=  self._d * d
-
-		# print statement for testing
-		# print("e: {} \t d: {} \t u: {}".format(err, d, u))
-			
-		return u
-
-	def pd_reset(self):
-		# reset the PD Controller error values when it has to turn and start the wall following over
-		self._errors = []
-
-
-	def calc_angle_distance(self, angle_1, angle_2):
-		# calculates the distance between two angles.
-		d_angle = (angle_2 - angle_1) % (2 * math.pi)
-
-		# makes sure output is in range (-pi, pi)
-		# this way sign of output indicates quickest direction to rotate from angle_1 to angle_2
-		if d_angle >= math.pi:
-			d_angle -= 2 * math.pi
-
-		return d_angle
-
-	def distance_between(self, x1, y1, x2, y2):
-		# calculates euclidean distance between two points
-		return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+	
 
 	def rotate(self, angle):
 		rate = rospy.Rate(FREQUENCY)
@@ -258,137 +223,39 @@ class Intruder_Patrol_Movement():
 			
 				rate.sleep()
 
-	def drive(self, distance):
-		rate = rospy.Rate(FREQUENCY)
-
-		if not rospy.is_shutdown():
-
-			# if distance is negative, move backwards
-			if distance < 0:
-				lin_vel = - self.linear_velocity
-			else: # if distance is positive, move forward
-				lin_vel = self.linear_velocity
-			
-			"""using only timer"""
-			# Get current time.
-			start_time = rospy.get_rostime()
-			# publish motion until enough time elapses so the robot moves the given distance
-			while rospy.get_rostime() - start_time < rospy.Duration(abs(distance) / self.linear_velocity):
-				self.move(lin_vel, 0)
-
-
-				rate.sleep()
-				
-
-	def rotate_to(self, orientation_angle):
-		# rotation to given orientation in the odom frame
-		d_angle = (orientation_angle - self.odom_yaw) % (2 * math.pi)
-
-		# see which way to rotate (shortest way)
-		if d_angle < math.pi:	# rotate counterclockwise
-			self.rotate(d_angle)
-		else: # rotate clockwise
-			self.rotate(d_angle - (2 * math.pi))
-
-	def go_to_point(self, x, y):
-		# rotation, translation, method to get robot to a certain position
-		dest_angle = math.atan2(y - self.odom_y, x - self.odom_x)
-		# find distance the robot has to go to that point
-		dest_distance = self.distance_between(self.odom_x, self.odom_y, x, y)
-		# find rotation angle for final orientation
-
-		self.rotate_to(dest_angle)	# rotate toward destination point
-		self.drive(dest_distance)	# drive calculated distance
-
-
-	def go_to_state(self, x, y, theta):
-		# rotation, translation, rotation method to get robot to a certain position and orientation
-		self.go_to_point(x, y)	# drive to point
-		self.rotate_to(theta)	# rotate to given final orientation
-
-
-	def follow_wall(self):
-		# move at constant linear velocity and angular velocity based on error
-
-		# calculate actuation with self.step() method
-		ang_vel = self.pd_step(self.err, self._dt)
-		self.move(self.linear_velocity, ang_vel)
-
-	def random_walk(self):
-		rate = rospy.Rate(FREQUENCY) # loop at 10 Hz.
-		if not rospy.is_shutdown() and self._fsm == FSM.RANDOM_WALK:
-			# Keep looping until user presses Ctrl+C
-			
-			# If the flag self._close_obstacle is False, the robot should move forward.
-			# Otherwise, the robot should rotate for a random amount of time
-			# after which the flag is set again to False.
-			# Use the function move already implemented, passing the default velocities saved in the corresponding class members.
-
-			if not self.front_obs:
-				self.move(LINEAR_VELOCITY, 0)
-
-			else:
-				self.random_rotate()
-				self.front_obs = False
-				
-			rate.sleep()
-
-	def random_rotate(self):
-		rand_angle = 0
-		while abs(rand_angle) <= HALF_FRONT_ANGLE:
-			rand_angle = 2 * math.pi * random.random() - math.pi
-			print("att " + str(rand_angle))
-		
-		print(rand_angle)
-
-		self.rotate(rand_angle)
-
-
 
 	def spin(self):
 		rate = rospy.Rate(FREQUENCY) # loop at 10 Hz.
-
-		# keep track of time to switch between movement methods
-		self.start_time = rospy.get_rostime()
-
 		while not rospy.is_shutdown():
+			# run only when the map is loaded
+			if self.inflated_map:
 
-			self.curr_time = rospy.get_rostime()
+				# visualize start and end points
+				print("start goal points")
+				self.set_start_goal_map(START[0], START[1], GOAL[0], GOAL[1])
 
-			# if self.curr_time - self.start_time >= rospy.Duration(DT_MODE):
-			# 	if self._fsm == FSM.RANDOM_WALK:
-			# 		self._fsm = FSM.PD_START
-			# 		print("PD")
-			# 	else:
-			# 		self._fsm = FSM.RANDOM_WALK
-			# 		print("RW")
+				# Uses a BFS to find the shortest path between the start and end points in the map frame
+				(self.path, self.grid_path) = find_path(self.inflated_map, START, GOAL)
 
-			# 	self.start_time = rospy.get_rostime()
+				# if path is an empty list, it means a path was not found
+				# Either there is no path, or the start or end positions are on occupied spaces (walls)
+				if self.path == []:
+					print("Error: no path found. Either no path exists or the start or end positions are on occupied spaces")
+					self.path = []
+					# return
+
+			# publish the start and end markers again in case the
+			# vizualization reset in the time it takes the BFS to run
+			self.set_start_goal_map(START[0], START[1], GOAL[0], GOAL[1])
+
+			# publish each pose as a PoseStamped message and as a marker for the vizualization
+			if self.path:
+				self.publish_path_markers(self.path)
+				grid_movements = get_grid_movements(self.grid_path)
+
 				
-
-			# follow right wall until robot finds an obstacle
-			if self._fsm == FSM.PD_FOLLOW_WALL:
-				self.follow_wall()
-
-			# turn left until not blocked by obstacle
-			elif self._fsm == FSM.PD_TURN_LEFT:
-				print("lll")
-				self.move(0, self.angular_velocity)
-			elif self._fsm == FSM.PD_TURN_RIGHT:
-				print("rrr")
-				self.move(0, - self.angular_velocity)
-
-			# go forward at the beginning of the script until the robot finds a wall
-			elif self._fsm ==FSM.PD_START:
-				self.move(self.linear_velocity, 0)
-
-			elif self._fsm == FSM.RANDOM_WALK:
-				self.random_walk()
-
-			elif self._fsm == FSM.STOP:
-				self.stop()
-
-			rate.sleep()
+			
+		rate.sleep()
 		
 
 def main():
