@@ -1,6 +1,6 @@
 # RoboticsFinalProject
 
-To execute the program, open  terminal tabs and a browser window.
+To execute the program, open 8 terminal tabs and a browser window.
 
 In all tabs, navigate to the vnc-ros directory. All commands must be run within this folder.
 
@@ -50,9 +50,22 @@ Navigate to your browser window and go to http://localhost:8080/vnc.html
 
 Within the rviz window, add a map by topic (not by display type)
 
-If you'd like to build the map by teleoperating the robot (the most efficient way), run
+If you'd like to build the map by teleoperating the robot (the most efficient way), in the seventh tab run
 ```
 rosrun teleop_twist_keyboard teleop_twist_keyboard.py
 ```
+And control the robot with the keyboard until the map is fully built
+
+When you are confident in the map built, in the eight tab run
+```
+rosrun map_server map_saver -f ~/file_name
+```
+where ~/file_name is the path to and name of your output file
 
 ## If you are loading in a previously built yaml file
+
+In the fourth tab, run 
+```
+rosrun map_server map_server file_name.yaml
+```
+where file_name.yaml is the name of your yaml file you are loading in.
