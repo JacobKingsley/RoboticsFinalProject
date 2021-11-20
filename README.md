@@ -69,3 +69,17 @@ In the fourth tab, run
 rosrun map_server map_server file_name.yaml
 ```
 where file_name.yaml is the name of your yaml file you are loading in.
+
+## To initiate the personnel detection with the robot
+
+In one tab, first run
+```
+python ImageProcessor.py
+```
+
+Note: it is important this is ran first.
+
+Then, run
+```
+python Navigation.py
+```
