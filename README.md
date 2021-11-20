@@ -69,3 +69,35 @@ In the fourth tab, run
 rosrun map_server map_server file_name.yaml
 ```
 where file_name.yaml is the name of your yaml file you are loading in.
+
+
+
+## To run the 2D Patrol Algorithms
+The 2D patrol algorithms are not used in our final product, but they were used to test the efficiency of the random walk and waypoint methods of patrolling.
+
+The two 2D patrolling files are `2d_waypoints.py` and `2d_random_walk.py`. 
+
+### Running `2d_random_walk.py`
+
+`2d_random_walk` works on any world file, and can be run with the following steps after navigating to the workspace holding the file and running the docker:
+
+1. Build the docker
+2. In another terminal, run `roscore`
+3. In another terminal, open a world file with `rosrun stage_ros stageros [path to worldfile]`
+4. Now run the random walk script `python 2d_random_walk.py`
+
+
+### Running `2d_waypoints.py`
+
+`2d_waypoints.py` requires an occupancy grid, so run it on a map that you already have a map of. This file also uses the `Grid()` class from the `grid.py` file and the functions from the `path_functions.py` file. It also requires the tuning of certain constants based on the map you are using. These constants are:
+
+In `2d_waypoints.py`: `START` -- set the `START` constant to be a tuple containing the x and y coordinates of the robot's starting location in the map frame (in m). The script assumes that the robot starts by facing an orientation of 0 in the map frame.
+
+
+It can be run with the following steps after navigating to the workspace holding the file and running the docker:
+
+1. Build the docker
+2. In another terminal, run `roscore`
+3. In another temrinal publish the map by running `rosrun map_server map_server [path to map file (.yaml or .yml)]`
+4. In another terminal, open the world file with `rosrun stage_ros stageros [path to worldfile]`
+5. Now run the waypoint script `python 2d_waypoints.py`

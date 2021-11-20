@@ -14,9 +14,11 @@ import numpy as np
 import copy
 
 
-
 GRID_SQUARE_OCCUPIED = 100
-INFLATE_SCALE = 3
+
+# manually set the scale of the inflation depending on the particular map
+# The higher the scale, the further from the wall the robot stays
+INFLATE_SCALE = 7
 
 
 class Grid:
