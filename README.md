@@ -101,3 +101,16 @@ It can be run with the following steps after navigating to the workspace holding
 3. In another temrinal publish the map by running `rosrun map_server map_server [path to map file (.yaml or .yml)]`
 4. In another terminal, open the world file with `rosrun stage_ros stageros [path to worldfile]`
 5. Now run the waypoint script `python 2d_waypoints.py`
+## To initiate the personnel detection with the robot
+
+In one tab, first run
+```
+python ImageProcessor.py
+```
+
+Note: it is important this is ran first.
+
+Then, run
+```
+python Navigation.py
+```
