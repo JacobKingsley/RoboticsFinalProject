@@ -25,12 +25,6 @@ import tf
 
 # Constants.
 
-ANGLE_THRESH = .04
-LINEAR_THRESH = .03
-
-
-
-# Constants.
 # Topic names
 DEFAULT_CMD_VEL_TOPIC = "/cmd_vel"
 DEFAULT_ODOM_TOPIC = "/odom"
@@ -40,11 +34,14 @@ DEFAULT_GRID_TOPIC = "/map"
 FREQUENCY = 10 #Hz.
 
 # Velocities that will be used
-LINEAR_VELOCITY = .4 # m/s
+LINEAR_VELOCITY = .25 # m/s
 ANGULAR_VELOCITY = math.pi/4 # rad/s
 
 # small distance used in WaypointPatrol2D.unstick_wall()
 DX = .2
+
+# threshold used when using odometry for rotations
+ANGLE_THRESH = .04
 
 ##### Set the point in the map (in m) that the robot starts out at #####
 # Assumes the robot starts out at an orientation angle of 0
@@ -169,12 +166,10 @@ class WaypointPatrol2D():
 			else: # if distance is positive, move forward
 				lin_vel = self.linear_velocity
 
-			# drive the desired distance by finding how far the robot has travelled using odometry
-			original_x = self.x
-			original_y = self.y
-
-			# move until the robot has travelled the desired amount
-			while abs(self.distance_between(self.x, self.y, original_x, original_y) - distance) > LINEAR_THRESH:
+			# Get current time.
+			start_time = rospy.get_rostime()
+			# publish motion until enough time elapses so the robot moves the given distance
+			while rospy.get_rostime() - start_time < rospy.Duration(abs(distance) / self.linear_velocity):
 				self.move(lin_vel, 0)
 
 				rate.sleep()
@@ -187,6 +182,7 @@ class WaypointPatrol2D():
 
 		curr_grid = self.inflated_map.m_to_grid_coords(self.x, self.y)
 		while not self.inflated_map.is_valid(curr_grid[0], curr_grid[1]):
+			print(self.inflated_map.is_valid(curr_grid[0], curr_grid[1]))
 			self.drive(-DX)
 			curr_grid = self.inflated_map.m_to_grid_coords(self.x, self.y)
 
@@ -234,7 +230,7 @@ class WaypointPatrol2D():
 			elif movement[0] == 'y':
 				self.go_to_point(self.x, self.y + d)
 
-			rospy.sleep(.2)
+			rospy.sleep(.5)
 
 		rospy.sleep(1)
 		self._fsm = FSM.GENERATE_POINTS
@@ -287,7 +283,7 @@ class WaypointPatrol2D():
 
 	def spin(self):
 		rate = rospy.Rate(FREQUENCY) # loop at 10 Hz.
-		while not rospy.is_shutdown() and self.next_waypoint:
+		while not rospy.is_shutdown():
 			if self.inflated_map:
 			# run only when the map is loaded
 
@@ -298,8 +294,6 @@ class WaypointPatrol2D():
 
 				elif self._fsm == FSM.FOLLOW_PATH:
 					if self.grid_path and self.grid_movements:
-						print(self.grid_path)
-						print(self.grid_movements)
 						self.move_along_path(self.grid_movements)
 
 				elif self._fsm == FSM.UNSTICK_WALL:

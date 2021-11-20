@@ -29,6 +29,9 @@ MIN_THRESHOLD_DISTANCE = 0.6 # m, threshold distance, should be smaller than ran
 MIN_SCAN_ANGLE_FRONT = -35 / 180 * math.pi
 MAX_SCAN_ANGLE_FRONT = 35 / 180 * math.pi
 
+# time delay after rotation to prevent new rotation from starting before current one ends
+DT = .5
+
 
 class RandomWalk_2D():
 	def __init__(self, linear_velocity=LINEAR_VELOCITY, angular_velocity=ANGULAR_VELOCITY, min_threshold_distance=MIN_THRESHOLD_DISTANCE,
@@ -108,6 +111,9 @@ class RandomWalk_2D():
 				
 				while rospy.get_rostime() - turn_start_time < rospy.Duration(turn_duration):
 					self.move(0, ang_vel)
+
+					rate.sleep()
+				rospy.sleep(DT)
 
 			
 				self._close_obstacle = False
