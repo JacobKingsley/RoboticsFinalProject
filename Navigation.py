@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 #The line above is important so that this file is interpreted with Python when running it.
 
+# Author: Blake Danziger, Burke Jaeger, Brett Kidman, Jacob Kingsley
+# Date: Fall 2021
+# CS 81/281 Final Project
+# Robot Navigation Controller
+
 # Import of python modules.
 import math # use of pi.
 import random

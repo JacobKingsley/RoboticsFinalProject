@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 # Author: Brett Kidman 2021
+
+# Author: Blake Danziger, Burke Jaeger, Brett Kidman, Jacob Kingsley
+# Date: Fall 2021
+# CS 81/281 Final Project
+# Robot Image Processor
+
 # import of relevant libraries.
 import rospy # module for ROS APIs
 from sensor_msgs.msg import Image
